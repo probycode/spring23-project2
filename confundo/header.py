@@ -1,57 +1,61 @@
-# -*- Mode: python; py-indent-offset: 4; indent-tabs-mode: nil; coding: utf-8; -*-
-# Copyright 2019 Alex Afanasyev
-#
-# This program is free software: you can redistribute it and/or modify it under the terms of
-# the GNU General Public License as published by the Free Software Foundation, either version
-# 3 of the License, or (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY;
-# without even the implied warranty of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-# See the GNU General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License along with this program.
-# If not, see <http://www.gnu.org/licenses/>.
-
 import struct
-
-from confundo import MAX_SEQNO
-
-
 class Header:
-    '''Abstraction to handle Confundo header'''
-
-    def __init__(self, seqNum=0, ackNum=0, connId=0, isAck=False, isSyn=False, isFin=False):
-        self.seqNum = seqNum % MAX_SEQNO
-        self.ackNum = ackNum if isAck else 0
-        self.connId = connId
-        self.isAck = isAck
-        self.isSyn = isSyn
-        self.isFin = isFin
+    def __init__(self, sequence_number=0, acknowledgment_number=0,
+                 connection_id=0, ack=False, syn=False, fin=False):
+        self.sequence_number = sequence_number
+        self.acknowledgment_number = acknowledgment_number if ack else 0
+        self.connection_id = connection_id
+        self.ack = ack
+        self.syn = syn
+        self.fin = fin
 
     def encode(self):
+        # Create flags
         flags = 0
-        if self.isAck:
-            flags = flags | (1 << 2)
-        if self.isSyn:
-            flags = flags | (1 << 1)
-        if self.isFin:
-            flags = flags | (1)
-        return struct.pack("!IIHH",
-                           self.seqNum, self.ackNum,
-                           self.connId, flags)
+        if self.ack:
+            flags |= (1 << 2)
+        if self.syn:
+            flags |= (1 << 1)
+        if self.fin:
+            flags |= 1
 
-    def decode(self, packet):
-        (self.seqNum, self.ackNum, self.connId, flags) = struct.unpack("!IIHH", packet)
-        self.isAck = flags & (1 << 2)
-        self.isSyn = flags & (1 << 1)
-        self.isFin = flags & (1)
+        # Pack the header into bytes
+        return struct.pack('!I I H H', self.sequence_number,
+                           self.acknowledgment_number, self.connection_id,
+                           flags)
+
+    @classmethod
+    def decode(cls, data):
+        # Unpack the header from bytes
+        sequence_number, acknowledgment_number, connection_id, flags = \
+            struct.unpack('!I I H H', data[:12])
+
+        # Extract flags
+        ack = bool(flags & (1 << 2))
+        syn = bool(flags & (1 << 1))
+        fin = bool(flags & 1)
+
+        return cls(sequence_number, acknowledgment_number,
+                   connection_id, ack, syn, fin)
 
     def __str__(self):
-        s = f"{self.seqNum} {self.ackNum} {self.connId}"
-        if self.isAck: s = s + " ACK"
-        if self.isSyn: s = s + " SYN"
-        if self.isFin: s = s + " FIN"
-        return s
+        return f"Seq: {self.sequence_number}, Ack: {self.acknowledgment_number}, " \
+               f"ConnID: {self.connection_id}, Flags: {('A' if self.ack else '')}" \
+               f"{('S' if self.syn else '')}{('F' if self.fin else '')}"
 
-    def __repr__(self):
-        return self.__str__()
+
+if __name__ == '__main__':
+    # Test the Header class
+    header = Header(1000, 2000, 300, True, True, False)
+    encoded_data = header.encode()
+    decoded_header = Header.decode(encoded_data)
+    print(header)
+
+    assert header.sequence_number == decoded_header.sequence_number
+    assert header.acknowledgment_number == decoded_header.acknowledgment_number
+    assert header.connection_id == decoded_header.connection_id
+    assert header.ack == decoded_header.ack
+    assert header.syn == decoded_header.syn
+    assert header.fin == decoded_header.fin
+
+    print("Test passed!")
