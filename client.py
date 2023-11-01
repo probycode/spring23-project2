@@ -31,13 +31,11 @@ class ConfundoClient:
             self.cwnd += 412  # Increment linearly in the congestion avoidance phase
 
     def send_packet(self, syn=False, ack=False, fin=False, payload=b''):
-        if syn:
-            self.seq_number = 0  # Reset sequence number for SYN packets
         header = Header(self.seq_number, 0, self.conn_id, ack, syn, fin)
         packet = header.encode() + payload
         self.sock.sendto(packet, (self.server_ip, self.server_port))
         self.last_sent_data = (header, payload)  # Store the last sent data for potential retransmission
-        print_msg = f"SEND {self.seq_number} 0 {self.conn_id} {self.cwnd} {self.ss_thresh}"
+        print_msg = f"SEND {self.seq_number} {header.acknowledgment_number} {self.conn_id} {self.cwnd} {self.ss_thresh}"
         flags = [flag for flag, is_set in [("ACK", ack), ("SYN", syn), ("FIN", fin), ("DUP", False)] if is_set]
         print(f"{print_msg} {' '.join(flags)}")
 
@@ -114,12 +112,12 @@ class ConfundoClient:
             self.sock.close()
 
 
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser("Parser")
-    parser.add_argument("host", help="Set Hostname")
-    parser.add_argument("port", help="Set Port Number")
-    parser.add_argument("file", help="Set File Directory")
-    args = parser.parse_args()
 
-    client = ConfundoClient(args.host, int(args.port), args.file)
-    client.run()
+parser = argparse.ArgumentParser("Parser")
+parser.add_argument("host", help="Set Hostname")
+parser.add_argument("port", help="Set Port Number")
+parser.add_argument("file", help="Set File Directory")
+args = parser.parse_args()
+
+client = ConfundoClient(args.host, int(args.port), args.file)
+client.run()
