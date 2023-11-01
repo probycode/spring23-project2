@@ -1,44 +1,62 @@
-#!/usr/bin/env python3
-
 import argparse
-import os
 import socket
 import sys
-import time
+from confundo.header import Header
 
-from confundo import Socket, GLOBAL_TIMEOUT, MAX_SEQNO
+class ConfundoServer:
 
-parser = argparse.ArgumentParser("Parser")
-parser.add_argument("port", help="Set Port Number", type=int)
-args = parser.parse_args()
+    def __init__(self, ip, port):
+        self.server_ip = ip
+        self.server_port = port
+        self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        self.sock.bind((ip, port))
 
-def start():
-    try:
-        with Socket() as sock:
-            sock.settimeout(GLOBAL_TIMEOUT)
-            sock.bind(("0.0.0.0", int(args.port)))
-            sock.listen(5)
+        self.conn_id = None
+        self.expected_seq_number = None
 
-            while True:
-                client_sock = sock.accept()
-                handle_client(client_sock)
+    def send_packet(self, syn=False, ack=False, fin=False, ack_num=0, conn_id=0, client_address=None):
+        header = Header(0, ack_num, conn_id, ack, syn, fin)
+        packet = header.encode()
+        self.sock.sendto(packet, client_address)
+        print(f"SEND 0 {ack_num} {conn_id} - -", end=" ")
+        if ack: print("ACK", end=" ")
+        if syn: print("SYN", end=" ")
+        if fin: print("FIN", end=" ")
+        print()
 
-    except RuntimeError as e:
-        sys.stderr.write(f"ERROR: {e}\n")
-        sys.exit(1)
+    def recv_packet(self):
+        data, client_address = self.sock.recvfrom(424)
+        header = Header.decode(data[:12])
+        print(f"RECV {header.sequence_number} {header.acknowledgment_number} {header.connection_id} - -", end=" ")
+        if header.ack: print("ACK", end=" ")
+        if header.syn: print("SYN", end=" ")
+        if header.fin: print("FIN", end=" ")
+        print()
+        return header, data[12:], client_address
 
-def handle_client(client_sock):
-    try:
-        with client_sock:
-            while True:
-                data = client_sock.recv(MAX_SEQNO)
-                if not data:
-                    break
-                # Handle received data (e.g., store it or process it)
-                client_sock.settimeout(GLOBAL_TIMEOUT)
+    def handle_connection(self):
+        header, flags, client_address= self.recv_packet()
+        if header.syn:
+            self.conn_id = header.connection_id + 1
+            self.expected_seq_number = header.sequence_number + 1
+            self.send_packet(syn=True, ack=True, ack_num=self.expected_seq_number, conn_id=self.conn_id, client_address=client_address)
 
-    except RuntimeError as e:
-        sys.stderr.write(f"ERROR: {e}\n")
+    def handle_data_transfer(self):
+        while True:
+            header, data, client_address = self.recv_packet()
+            if header.sequence_number == self.expected_seq_number:
+                # expected data received
+                self.expected_seq_number += len(data)
+                self.send_packet(ack=True, ack_num=self.expected_seq_number, conn_id=self.conn_id, client_address=client_address)
+            if header.fin:
+                break
 
-if __name__ == '__main__':
-    start()
+    def run(self):
+        print(f"Server listening on {self.server_ip}:{self.server_port}")
+        while True:
+            self.handle_connection()
+            self.handle_data_transfer()
+
+if __name__ == "__main__":
+    server = ConfundoServer("0.0.0.0", 5000)
+    server.run()
