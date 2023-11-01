@@ -5,7 +5,7 @@ import sys
 import socket
 import time
 from confundo.header import Header
-from confundo.common import DEFAULT_TIMEOUT, FIN_WAIT_TIMEOUT
+from confundo.common import DEFAULT_TIMEOUT, FIN_WAIT_TIMEOUT, MAX_SEQNO
 
 
 class ConfundoClient:
@@ -22,29 +22,39 @@ class ConfundoClient:
         self.conn_id = 0
         self.seq_number = 50000
         self.ack_num = 0
+        self.last_sent_data = None
+
+    def update_cwnd(self):
+        if self.cwnd < self.ss_thresh:
+            self.cwnd *= 2
+        else:
+            self.cwnd += 412  # Increment linearly in the congestion avoidance phase
 
     def send_packet(self, syn=False, ack=False, fin=False, payload=b''):
+        if syn:
+            self.seq_number = 0  # Reset sequence number for SYN packets
         header = Header(self.seq_number, 0, self.conn_id, ack, syn, fin)
         packet = header.encode() + payload
         self.sock.sendto(packet, (self.server_ip, self.server_port))
-        print(f"SEND {self.seq_number} 0 {self.conn_id} {self.cwnd} {self.ss_thresh}", end=" ")
-        if ack: print("ACK", end=" ")
-        if syn: print("SYN", end=" ")
-        if fin: print("FIN", end=" ")
-        self.ack_num = header.acknowledgment_number
-        print()
+        self.last_sent_data = (header, payload)  # Store the last sent data for potential retransmission
+        print_msg = f"SEND {self.seq_number} 0 {self.conn_id} {self.cwnd} {self.ss_thresh}"
+        flags = [flag for flag, is_set in [("ACK", ack), ("SYN", syn), ("FIN", fin), ("DUP", False)] if is_set]
+        print(f"{print_msg} {' '.join(flags)}")
 
     def recv_packet(self):
-        data, _ = self.sock.recvfrom(424)
-        header = Header.decode(data[:12])
-        print(
-            f"RECV {header.sequence_number} {header.acknowledgment_number} {header.connection_id} {self.cwnd} {self.ss_thresh}",
-            end=" ")
-        if header.ack: print("ACK", end=" ")
-        if header.syn: print("SYN", end=" ")
-        if header.fin: print("FIN", end=" ")
-        print()
-        return header, data[12:]
+        try:
+            data, _ = self.sock.recvfrom(424)
+            header = Header.decode(data[:12])
+            print_msg = f"RECV {header.sequence_number} {header.acknowledgment_number} {header.connection_id} {self.cwnd} {self.ss_thresh}"
+            flags = [flag for flag, is_set in [("ACK", header.ack), ("SYN", header.syn), ("FIN", header.fin), ("DUP", False)] if is_set]
+            print(f"{print_msg} {' '.join(flags)}")
+            return header, data[12:]
+        except socket.timeout:
+            # Handle the retransmission logic here
+            if self.last_sent_data:
+                header, payload = self.last_sent_data
+                self.send_packet(syn=header.syn, ack=header.ack, fin=header.fin, payload=payload)
+            raise
 
     def connect(self):
         try:
@@ -57,14 +67,15 @@ class ConfundoClient:
                 self.conn_id = header.connection_id
                 self.seq_number += 1  # Increment sequence number
                 self.send_packet(ack=True)  # Send an ACK packet, not another SYN
-
             else:
                 sys.stderr.write("ERROR: Unexpected server response during handshake.\n")
                 sys.exit(1)
-
         except socket.timeout:
             sys.stderr.write("ERROR: Connection timed out during handshake.\n")
             sys.exit(1)
+
+    def update_sequence_number(self, increment_by=1):
+        self.seq_number = (self.seq_number + increment_by) % (MAX_SEQNO + 1)
 
     def send_file(self):
         with open(self.filename, 'rb') as file:
@@ -73,20 +84,20 @@ class ConfundoClient:
                 if not data:
                     break
                 self.send_packet(ack=True, payload=data)
-                print(f"SEND {self.seq_number} {self.ack_num} {self.conn_id} {self.cwnd} {self.ss_thresh} ACK")
-                # Wait for an ACK for this chunk
                 while True:
                     header, _ = self.recv_packet()
                     if header.ack:
+                        self.update_sequence_number(len(data))
+                        self.update_cwnd()
                         break
 
     def close(self):
         self.send_packet(fin=True)
-        header, _ = self.recv_packet()
-        if not header.ack:
-            sys.stderr.write("ERROR: Unexpected server response during termination\n")
-            sys.exit(1)
-        time.sleep(FIN_WAIT_TIMEOUT)
+        start_time = time.time()
+        while time.time() - start_time < FIN_WAIT_TIMEOUT:
+            header, _ = self.recv_packet()
+            if header.fin:
+                self.send_packet(ack=True)
 
     def run(self):
         try:
@@ -109,7 +120,6 @@ if __name__ == "__main__":
     parser.add_argument("port", help="Set Port Number")
     parser.add_argument("file", help="Set File Directory")
     args = parser.parse_args()
-    print(args)
 
     client = ConfundoClient(args.host, int(args.port), args.file)
     client.run()
