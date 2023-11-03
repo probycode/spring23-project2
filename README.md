@@ -23,11 +23,13 @@ To dissect tcpdump-recorded file, you can use `-r <pcapfile>` option. For exampl
     wireshark -X lua_script:./confundo.lua -r confundo.pcap
 
 ## Team Information
-Name: Avraham Moshe
-UID: 6283545
+Name: `Avraham Moshe`
+
+UID: `6283545`
+
 Contribution: As the sole member of this project, Avraham was responsible for all aspects of the project, including design, implementation, testing, and debugging.
-High-Level Design
-Server Design
+High-Level Design Server Design
+
 Initialization Phase: On startup, the server establishes a connection, initializes necessary resources, and waits for incoming client connections.
 
 Processing Phase: For each client connection, the server processes the received packets, performs necessary computations, and sends back the results.
