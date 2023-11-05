@@ -1,7 +1,7 @@
 # -*- Mode: python; py-indent-offset: 4; indent-tabs-mode: nil; coding: utf-8; -*-
 # Copyright 2019 Alex Afanasyev
 #
-
+#!/usr/bin/env python3
 MTU=412
 MAX_SEQNO = 50000
 RETX_TIME = 0.5
@@ -21,3 +21,6 @@ ISN = 50000
 
 DEFAULT_TIMEOUT = 10
 FIN_WAIT_TIMEOUT = 2
+
+
+# print("hello")

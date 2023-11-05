@@ -1,4 +1,7 @@
 # -*- Mode: python; py-indent-offset: 4; indent-tabs-mode: nil; coding: utf-8; -*-
+#!/usr/bin/env python3
+import os
+
 
 from enum import Enum
 import socket
@@ -24,6 +27,9 @@ class State(Enum):
 
 # class TimeoutError:
 #     pass
+
+def incSeqNum(seqNum, amount):
+    return (seqNum + amount) % (MAX_SEQNO + 1)
 
 class Socket:
     '''Incomplete socket abstraction for Confundo protocol'''
@@ -193,9 +199,9 @@ class Socket:
         self.expectFinAck()
 
     def sendSynPacket(self):
+        # updated
         synPkt = Packet(seqNum=self.seqNum, connId=self.connId, isSyn=True)
-        ### UPDATE CORRECTLY HERE
-        self.seqNum = 1
+        self.seqNum = incSeqNum(self.seqNum, 1)  # Incrementing the sequence number correctly
         self._send(synPkt)
 
     def expectSynAck(self):
@@ -293,21 +299,90 @@ class Socket:
                 byteS += len(pkt.payload)
 
             pkt = self._recv()  # if within RTO we didn't receive packets, things will be retransmitted
+            # update
             if pkt and pkt.isAck:
-                ### UPDATE CORRECTLY HERE
-                advanceAmount = pkt.ackNum - self.base
+                # Handling new ack or duplicate ack correctly
+                advanceAmount = (pkt.ackNum - self.base) % MOD
                 if advanceAmount == 0:
                     self.nDupAcks += 1
+                    # Initiate congestion control if there are three duplicate ACKs
+                    if self.nDupAcks == 3:
+                        self.cc.on_three_dup_acks()  # This function would handle the congestion control
                 else:
-                    self.cc.on_ack()
+                    self.outBuffer = self.outBuffer[advanceAmount:]
+                    self.base = pkt.ackNum
                     self.nDupAcks = 0
+                    self.cc.on_ack(advanceAmount)  # Congestion control on successful ACK reception
 
-                self.outBuffer = self.outBuffer[advanceAmount:]
-                ### UPDATE CORRECTLY HERE
-                self.base = pkt.ackNum
+                if advanceAmount > 0 or self.nDupAcks >= 3:
+                    # Resetting retransmission timer
+                    startTime = time.time()
 
             if time.time() - startTime > GLOBAL_TIMEOUT:
                 self.state = State.ERROR
                 raise RuntimeError("timeout")
 
         return len(data)
+
+
+# ----------------------- tests
+import unittest
+
+# Constants you may need for the tests
+TEST_IP = "127.0.0.1"
+TEST_PORT = 12345
+TEST_DATA = b"Hello, World!"
+TEST_TIMEOUT = 5
+
+
+class TestSocket(unittest.TestCase):
+
+    def setUp(self):
+        """Set up test fixtures, if any."""
+        self.socket = Socket()
+
+    def tearDown(self):
+        """Tear down test fixtures, if any."""
+        self.socket.close()
+
+    def test_socket_creation(self):
+        """Test socket creation and initial state."""
+        self.assertEqual(self.socket.state, Socket.State.INVALID)
+
+    def test_socket_bind(self):
+        """Test socket binding to an endpoint."""
+        self.socket.bind((TEST_IP, TEST_PORT))
+        self.assertEqual(self.socket.state, Socket.State.LISTEN)
+
+    def test_socket_connect(self):
+        """Test socket connection to a remote endpoint."""
+        try:
+            self.socket.connect((TEST_IP, TEST_PORT))
+        except Exception as e:
+            self.fail(f"Socket connection failed: {e}")
+
+    def test_socket_send(self):
+        """Test sending data over socket."""
+        self.socket.connect((TEST_IP, TEST_PORT))
+        sent_len = self.socket.send(TEST_DATA)
+        self.assertEqual(sent_len, len(TEST_DATA))
+
+    def test_socket_recv(self):
+        """Test receiving data over socket."""
+        self.socket.bind((TEST_IP, TEST_PORT))
+        # Here you might need a way to simulate sending data to the socket
+        data = self.socket.recv(len(TEST_DATA))
+        self.assertEqual(data, TEST_DATA)
+
+    def test_socket_timeout(self):
+        """Test socket timeout."""
+        self.socket.settimeout(TEST_TIMEOUT)
+        self.socket.bind((TEST_IP, TEST_PORT))
+        with self.assertRaises(RuntimeError):
+            self.socket.recv(1024)  # Assuming this will timeout
+
+    # Add more tests depending on what functionalities you need to test.
+
+
+if __name__ == '__main__':
+    unittest.main()

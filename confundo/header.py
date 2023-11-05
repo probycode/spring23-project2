@@ -1,4 +1,7 @@
+#!/usr/bin/env python3
 import struct
+
+
 class Header:
     def __init__(self, sequence_number=0, acknowledgment_number=0,
                  connection_id=0, ack=False, syn=False, fin=False):
@@ -35,8 +38,11 @@ class Header:
         syn = bool(flags & (1 << 1))
         fin = bool(flags & 1)
 
-        return cls(sequence_number, acknowledgment_number,
-                   connection_id, ack, syn, fin)
+        return cls(sequence_number=sequence_number,
+               acknowledgment_number=acknowledgment_number,
+               connection_id=connection_id,
+               ack=ack, syn=syn, fin=fin)
+
 
     def __str__(self):
         return f"Seq: {self.sequence_number}, Ack: {self.acknowledgment_number}, " \
