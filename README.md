@@ -24,8 +24,13 @@ To dissect tcpdump-recorded file, you can use `-r <pcapfile>` option. For exampl
 
 ## Team Information
 Name: `Avraham Moshe`
-
 UID: `6283545`
+
+Name: `Shawna-Lee Pommells`
+UID: ``
+
+Name: `Josias Chevalier`
+UID: `6209275`
 
 Contribution: As the sole member of this project, Avraham was responsible for all aspects of the project, including design, implementation, testing, and debugging.
 High-Level Design Server Design
